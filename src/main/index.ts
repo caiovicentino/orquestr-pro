@@ -286,6 +286,40 @@ function registerFetchHandlers(): void {
       return { error: err instanceof Error ? err.message : "Fetch failed" }
     }
   })
+
+  // Authenticated fetch for Privy API
+  ipcMain.handle("fetch:privy", async (_event, method: string, path: string, body?: unknown) => {
+    try {
+      const { existsSync: fsExists, readFileSync: fsRead } = require("fs") as typeof import("fs")
+      const { join: pathJoin } = require("path") as typeof import("path")
+      const privyPath = pathJoin(getStateDir(), "privy.json")
+      if (!fsExists(privyPath)) return { error: "Privy not configured" }
+      const privy = JSON.parse(fsRead(privyPath, "utf-8"))
+      if (!privy.appId || !privy.appSecret) return { error: "Privy credentials incomplete" }
+
+      const auth = Buffer.from(`${privy.appId}:${privy.appSecret}`).toString("base64")
+      const headers: Record<string, string> = {
+        "Authorization": `Basic ${auth}`,
+        "privy-app-id": privy.appId,
+        "Content-Type": "application/json",
+      }
+
+      const fetchOpts: RequestInit = { method, headers }
+      if (body && (method === "POST" || method === "PUT" || method === "PATCH")) {
+        fetchOpts.body = JSON.stringify(body)
+      }
+
+      const res = await fetch(`https://api.privy.io${path}`, fetchOpts)
+      if (!res.ok) {
+        const text = await res.text()
+        return { error: `HTTP ${res.status}: ${text.slice(0, 200)}` }
+      }
+      const data = await res.json()
+      return { data }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Privy API call failed" }
+    }
+  })
 }
 
 function registerPrivyHandlers(): void {

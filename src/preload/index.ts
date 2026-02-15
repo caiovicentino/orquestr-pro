@@ -32,10 +32,12 @@ const api = {
   fetch: {
     json: (url: string) => ipcRenderer.invoke("fetch:json", url),
     post: (url: string, body: unknown) => ipcRenderer.invoke("fetch:post", url, body),
+    privy: (method: string, path: string, body?: unknown) => ipcRenderer.invoke("fetch:privy", method, path, body),
   },
   privy: {
     getConfig: () => ipcRenderer.invoke("privy:get-config"),
     setConfig: (appId: string, appSecret: string) => ipcRenderer.invoke("privy:set-config", appId, appSecret),
+    getSecret: () => ipcRenderer.invoke("privy:get-secret"),
   },
   credentials: {
     get: () => ipcRenderer.invoke("credentials:get"),

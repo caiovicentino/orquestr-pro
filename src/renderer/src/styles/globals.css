@@ -73,6 +73,26 @@
     user-select: none;
   }
 
+  /* Allow text selection in chat messages and code blocks */
+  .selectable-text,
+  .selectable-text * {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+    cursor: text;
+  }
+
+  /* Allow selection in inputs/textareas */
+  input, textarea, [contenteditable] {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+  }
+
+  /* Code blocks should always be selectable */
+  pre, code {
+    user-select: text !important;
+    -webkit-user-select: text !important;
+  }
+
   video::-webkit-media-controls-fullscreen-button {
     display: none !important;
   }

@@ -24,6 +24,7 @@ interface ClawBusinessAPI {
     get: () => Promise<Record<string, unknown>>
     set: (config: Record<string, unknown>) => Promise<Record<string, unknown>>
     patch: (patch: Record<string, unknown>) => Promise<Record<string, unknown>>
+    patchModel: (modelId: string) => Promise<Record<string, unknown>>
     path: () => Promise<string>
     stateDir: () => Promise<string>
   }
@@ -41,6 +42,31 @@ interface ClawBusinessAPI {
       duration: string
       createdAt: string
       previewPath: string | null
+    }>>
+    open: (filePath: string) => Promise<void>
+    showInFolder: (filePath: string) => Promise<void>
+  }
+  fetch: {
+    json: (url: string) => Promise<{ data?: unknown; error?: string }>
+    post: (url: string, body: unknown) => Promise<{ data?: unknown; error?: string }>
+    privy: (method: string, path: string, body?: unknown) => Promise<{ data?: unknown; error?: string }>
+  }
+  privy: {
+    getConfig: () => Promise<{ appId: string; hasSecret: boolean }>
+    setConfig: (appId: string, appSecret: string) => Promise<{ success: boolean }>
+    getSecret: () => Promise<string>
+  }
+  credentials: {
+    get: () => Promise<Record<string, { configured: boolean; masked: string }>>
+    set: (envVar: string, value: string) => Promise<{ success: boolean }>
+    delete: (envVar: string) => Promise<{ success: boolean }>
+    listProviders: () => Promise<Array<{
+      id: string
+      name: string
+      envVar: string
+      color: string
+      authTypes: string[]
+      description: string
     }>>
   }
   navigation: {

@@ -9,6 +9,8 @@ import {
   TrendingUp,
   Puzzle,
   Scissors,
+  Clock,
+  Wallet,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -23,6 +25,8 @@ export type PageId =
   | "agents"
   | "channels"
   | "markets"
+  | "wallets"
+  | "cron"
   | "security"
   | "plugins"
   | "activity"
@@ -42,6 +46,8 @@ const mainNav: NavItem[] = [
   { id: "agents", label: "Agents", icon: Bot },
   { id: "channels", label: "Channels", icon: MessageSquare },
   { id: "markets", label: "Markets", icon: TrendingUp },
+  { id: "wallets", label: "Wallets", icon: Wallet },
+  { id: "cron", label: "Cron Jobs", icon: Clock },
 ]
 
 const systemNav: NavItem[] = [

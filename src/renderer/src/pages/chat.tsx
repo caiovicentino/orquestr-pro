@@ -76,7 +76,22 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const [thinkingLevel, setThinkingLevel] = useState<"none" | "low" | "medium" | "high">("high")
+  const [showModelSelector, setShowModelSelector] = useState(false)
+  const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string; provider: string }>>([])
+  const [selectedModel, setSelectedModel] = useState<string>("")
   const activeSession = sessions.find((s) => s.sessionKey === activeSessionKey)
+
+  // Load available models from gateway
+  useEffect(() => {
+    if (!isConnected) return
+    client.modelsList().then((result: unknown) => {
+      const r = result as { models?: Array<{ id: string; name: string; provider: string }> }
+      if (r?.models) {
+        setAvailableModels(r.models)
+      }
+    }).catch(() => {})
+  }, [isConnected, client])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -328,7 +343,7 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
 
     if (isConnected) {
       try {
-        const opts: Record<string, unknown> = { thinking: "high" }
+        const opts: Record<string, unknown> = { thinking: thinkingLevel !== "none" ? thinkingLevel : undefined }
         if (attachments.length > 0) {
           opts.attachments = attachments
         }
@@ -519,6 +534,28 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
                 Disconnected
               </Badge>
             )}
+            {/* Thinking level toggle */}
+            <div className="relative mr-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "h-7 text-[10px] gap-1 font-mono",
+                  thinkingLevel === "high" ? "text-amber-400" :
+                  thinkingLevel === "medium" ? "text-blue-400" :
+                  thinkingLevel === "low" ? "text-zinc-400" : "text-zinc-600"
+                )}
+                onClick={() => {
+                  const levels: typeof thinkingLevel[] = ["none", "low", "medium", "high"]
+                  const idx = levels.indexOf(thinkingLevel)
+                  setThinkingLevel(levels[(idx + 1) % levels.length])
+                }}
+                title={`Thinking: ${thinkingLevel}`}
+              >
+                <Brain className="h-3.5 w-3.5" />
+                {thinkingLevel}
+              </Button>
+            </div>
             <Button variant="ghost" size="icon" className="h-7 w-7" onClick={handleReset} title="Reset session">
               <Trash2 className="h-3.5 w-3.5" />
             </Button>
@@ -584,7 +621,7 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
                       </div>
                     )}
 
-                    <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90">
+                    <div className="text-sm leading-relaxed whitespace-pre-wrap text-foreground/90 selectable-text">
                       <MessageContent content={message.content} />
                     </div>
                     {!message.isStreaming && message.role !== "system" && (
@@ -721,13 +758,17 @@ function MessageContent({ content }: { content: string }) {
           const lang = lines[0] || ""
           const code = lines.slice(1).join("\n")
           return (
-            <div key={i} className="my-3 rounded-lg border bg-zinc-900 overflow-hidden">
-              {lang && (
-                <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-800/50 border-b">
-                  <span className="text-[11px] text-muted-foreground font-mono">{lang}</span>
-                </div>
-              )}
-              <pre className="p-3 text-[13px] overflow-x-auto">
+            <div key={i} className="my-3 rounded-lg border bg-zinc-900 overflow-hidden group/code relative">
+              <div className="flex items-center justify-between px-3 py-1.5 bg-zinc-800/50 border-b">
+                <span className="text-[11px] text-muted-foreground font-mono">{lang || "code"}</span>
+                <button
+                  className="text-[10px] text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover/code:opacity-100"
+                  onClick={() => navigator.clipboard.writeText(code)}
+                >
+                  Copy
+                </button>
+              </div>
+              <pre className="p-3 text-[13px] overflow-x-auto selectable-text">
                 <code>{code}</code>
               </pre>
             </div>
@@ -735,19 +776,48 @@ function MessageContent({ content }: { content: string }) {
         }
 
         return part.split("\n").map((line, j) => {
+          if (line.startsWith("# ")) {
+            return <h2 key={`${i}-${j}`} className="text-lg font-bold mt-5 mb-2">{renderInline(line.slice(2))}</h2>
+          }
           if (line.startsWith("## ")) {
-            return <h3 key={`${i}-${j}`} className="text-base font-semibold mt-4 mb-2">{line.slice(3)}</h3>
+            return <h3 key={`${i}-${j}`} className="text-base font-semibold mt-4 mb-2">{renderInline(line.slice(3))}</h3>
           }
           if (line.startsWith("### ")) {
-            return <h4 key={`${i}-${j}`} className="text-sm font-semibold mt-3 mb-1.5">{line.slice(4)}</h4>
+            return <h4 key={`${i}-${j}`} className="text-sm font-semibold mt-3 mb-1.5">{renderInline(line.slice(4))}</h4>
           }
-          if (line.startsWith("- ")) {
+          if (line.startsWith("#### ")) {
+            return <h5 key={`${i}-${j}`} className="text-sm font-medium mt-2 mb-1">{renderInline(line.slice(5))}</h5>
+          }
+          // Numbered lists
+          if (/^\d+\.\s/.test(line)) {
+            const text = line.replace(/^\d+\.\s/, "")
+            return (
+              <div key={`${i}-${j}`} className="flex items-start gap-2 my-0.5 ml-1">
+                <span className="text-muted-foreground mt-0 shrink-0 min-w-[1.2em] text-right">{line.match(/^\d+/)?.[0]}.</span>
+                <span>{renderInline(text)}</span>
+              </div>
+            )
+          }
+          // Bullet lists (- or *)
+          if (/^[\-\*]\s/.test(line)) {
             return (
               <div key={`${i}-${j}`} className="flex items-start gap-2 my-0.5 ml-1">
                 <span className="text-muted-foreground mt-1.5 shrink-0">•</span>
                 <span>{renderInline(line.slice(2))}</span>
               </div>
             )
+          }
+          // Blockquote
+          if (line.startsWith("> ")) {
+            return (
+              <div key={`${i}-${j}`} className="border-l-2 border-primary/40 pl-3 my-1 text-muted-foreground italic">
+                {renderInline(line.slice(2))}
+              </div>
+            )
+          }
+          // Horizontal rule
+          if (/^[-*_]{3,}$/.test(line.trim())) {
+            return <hr key={`${i}-${j}`} className="my-4 border-border" />
           }
           if (line.trim() === "") {
             return <div key={`${i}-${j}`} className="h-2" />
@@ -759,17 +829,51 @@ function MessageContent({ content }: { content: string }) {
   )
 }
 
-function renderInline(text: string) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g)
-  return parts.map((part, i) => {
+function renderInline(text: string): React.ReactNode {
+  // Split on: `code`, **bold**, *italic*, [links](url), and bare URLs
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[([^\]]+)\]\(([^)]+)\)|https?:\/\/[^\s<>)"]+)/g)
+  const result: React.ReactNode[] = []
+  let idx = 0
+  
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i]
+    if (!part) continue
+    
     if (part.startsWith("`") && part.endsWith("`")) {
-      return <code key={i} className="text-[12px] bg-zinc-800 px-1.5 py-0.5 rounded font-mono">{part.slice(1, -1)}</code>
+      result.push(<code key={idx++} className="text-[12px] bg-zinc-800 px-1.5 py-0.5 rounded font-mono text-emerald-300">{part.slice(1, -1)}</code>)
+    } else if (part.startsWith("**") && part.endsWith("**")) {
+      result.push(<strong key={idx++} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>)
+    } else if (part.startsWith("*") && part.endsWith("*") && !part.startsWith("**")) {
+      result.push(<em key={idx++} className="italic">{part.slice(1, -1)}</em>)
+    } else if (part.startsWith("[") && part.includes("](")) {
+      // Markdown link [text](url)
+      const match = part.match(/\[([^\]]+)\]\(([^)]+)\)/)
+      if (match) {
+        result.push(
+          <a key={idx++} href={match[2]} target="_blank" rel="noopener noreferrer"
+            className="text-primary hover:underline cursor-pointer"
+            onClick={(e) => { e.preventDefault(); window.open(match[2], "_blank") }}>
+            {match[1]}
+          </a>
+        )
+      } else {
+        result.push(part)
+      }
+    } else if (/^https?:\/\//.test(part)) {
+      // Bare URL
+      result.push(
+        <a key={idx++} href={part} target="_blank" rel="noopener noreferrer"
+          className="text-primary hover:underline cursor-pointer break-all"
+          onClick={(e) => { e.preventDefault(); window.open(part, "_blank") }}>
+          {part.length > 60 ? part.slice(0, 57) + "..." : part}
+        </a>
+      )
+    } else {
+      result.push(part)
     }
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>
-    }
-    return part
-  })
+  }
+  
+  return result.length === 1 ? result[0] : <>{result}</>
 }
 
 function extractTextContent(content: unknown): string {
