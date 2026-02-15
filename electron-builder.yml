@@ -1,0 +1,88 @@
+appId: ai.orquestr.pro
+productName: Orquestr Pro
+copyright: Copyright © 2026 Orquestr.ai
+
+directories:
+  buildResources: resources
+  output: release
+
+files:
+  - "!**/.vscode/*"
+  - "!src/*"
+  - "!electron.vite.config.*"
+  - "!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
+  - "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}"
+
+extraResources:
+  - from: resources/openclaw
+    to: openclaw
+    filter:
+      - "**/*"
+      - "!**/.cache"
+      - "!**/node_modules/.package-lock.json"
+
+asarUnpack:
+  - resources/**
+
+mac:
+  entitlementsInherit: resources/entitlements.mac.plist
+  category: public.app-category.business
+  icon: resources/icon.icns
+  darkModeSupport: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  identity: "Caio Vicentino (3F3AJDFWJZ)"
+  notarize:
+    teamId: "3F3AJDFWJZ"
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+
+dmg:
+  sign: false
+  artifactName: "${productName}-${version}-${arch}.dmg"
+  title: "${productName} ${version}"
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+win:
+  icon: resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - arm64
+    - target: msi
+      arch:
+        - x64
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: "${productName}-Setup-${version}-${arch}.exe"
+
+msi:
+  artifactName: "${productName}-${version}-${arch}.msi"
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64
+        - arm64
+  category: Office
+
+publish:
+  provider: generic
+  url: https://releases.clawbusiness.com
