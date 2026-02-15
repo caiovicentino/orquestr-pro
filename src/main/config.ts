@@ -90,7 +90,6 @@ export function ensureGatewayConfig(): void {
         enabled: true,
         allowInsecureAuth: true,
         dangerouslyDisableDeviceAuth: true,
-        dangerouslyDisableOriginCheck: true,
         allowedOrigins: ["*"],
       },
     }
@@ -101,8 +100,9 @@ export function ensureGatewayConfig(): void {
     if (!cui.allowInsecureAuth || !cui.dangerouslyDisableDeviceAuth || !cui.allowedOrigins) {
       cui.allowInsecureAuth = true
       cui.dangerouslyDisableDeviceAuth = true
-      cui.dangerouslyDisableOriginCheck = true
       cui.allowedOrigins = ["*"]
+      // Remove invalid keys that would cause config validation failure
+      delete (cui as Record<string, unknown>).dangerouslyDisableOriginCheck
       gw.controlUi = cui
       needsWrite = true
     }
