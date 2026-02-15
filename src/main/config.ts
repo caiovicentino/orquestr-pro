@@ -90,6 +90,8 @@ export function ensureGatewayConfig(): void {
         enabled: true,
         allowInsecureAuth: true,
         dangerouslyDisableDeviceAuth: true,
+        dangerouslyDisableOriginCheck: true,
+        allowedOrigins: ["*"],
       },
     }
     needsWrite = true
@@ -99,7 +101,8 @@ export function ensureGatewayConfig(): void {
     if (!cui.allowInsecureAuth || !cui.dangerouslyDisableDeviceAuth || !cui.allowedOrigins) {
       cui.allowInsecureAuth = true
       cui.dangerouslyDisableDeviceAuth = true
-      cui.allowedOrigins = ["file://", "http://localhost:*", "http://127.0.0.1:*"]
+      cui.dangerouslyDisableOriginCheck = true
+      cui.allowedOrigins = ["*"]
       gw.controlUi = cui
       needsWrite = true
     }

@@ -23,8 +23,22 @@ interface DashboardProps {
 export function DashboardPage({ gatewayStatus, onStartGateway, onStopGateway, connectionState, isConnected }: DashboardProps) {
   const [gatewayError, setGatewayError] = useState<string | null>(null)
   const [gatewayLogs, setGatewayLogs] = useState<string[]>([])
+  const [gatewayPort, setGatewayPort] = useState<number | null>(null)
 
   const isElectron = typeof window !== "undefined" && !!window.api
+
+  useEffect(() => {
+    if (!isElectron) return
+    const fetchPort = async () => {
+      try {
+        const port = await window.api.gateway.port()
+        setGatewayPort(port)
+      } catch {}
+    }
+    fetchPort()
+    const interval = setInterval(fetchPort, 5000)
+    return () => clearInterval(interval)
+  }, [isElectron])
 
   useEffect(() => {
     console.log("[Dashboard] isElectron:", isElectron, "window.api:", typeof window !== "undefined" ? !!window.api : "no window")
@@ -143,7 +157,7 @@ export function DashboardPage({ gatewayStatus, onStartGateway, onStopGateway, co
                 </Badge>
               </StatusRow>
               <StatusRow label="Port">
-                <span className="text-sm font-mono">18789</span>
+                <span className="text-sm font-mono">{gatewayPort || "—"}</span>
               </StatusRow>
               {gatewayError && (
                 <div className="p-2 rounded-md bg-destructive/10 border border-destructive/20">

@@ -579,7 +579,9 @@ app.whenReady().then(() => {
   session.defaultSession.webRequest.onBeforeSendHeaders(
     { urls: ["ws://127.0.0.1:*/*", "ws://localhost:*/*"] },
     (details, callback) => {
-      details.requestHeaders["Origin"] = `http://127.0.0.1:${18789}`
+      // Use the actual gateway port (dynamic, may not be 18789)
+      const port = gatewayManager.getPort()
+      details.requestHeaders["Origin"] = `http://127.0.0.1:${port}`
       callback({ requestHeaders: details.requestHeaders })
     }
   )
@@ -607,6 +609,18 @@ app.whenReady().then(() => {
 
   createTray()
   createWindow()
+
+  // Auto-start gateway on launch
+  setTimeout(async () => {
+    try {
+      console.log("[AutoStart] Starting gateway...")
+      const result = await gatewayManager.start()
+      console.log("[AutoStart] Gateway started:", result.status)
+      updateTrayMenu()
+    } catch (err) {
+      console.error("[AutoStart] Gateway start failed:", err)
+    }
+  }, 500)
 
   // Auto-updater setup
   autoUpdater.autoDownload = true
