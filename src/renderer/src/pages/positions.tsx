@@ -128,15 +128,26 @@ export function PositionsPage({ client, isConnected }: PositionsPageProps) {
   // Polymarket state
   const [polyPositions, setPolyPositions] = useState<PolymarketPosition[]>([])
 
-  // Auto-load wallet from Privy
+  // Auto-load wallet from Privy — prefer wallet WITH policies (active server wallet)
   useEffect(() => {
     window.api.fetch.privy("GET", "/v1/wallets").then((result) => {
-      const data = result.data as { data?: Array<{ address: string; chain_type: string }> }
+      const data = result.data as { data?: Array<{ address: string; chain_type: string; policy_ids?: string[]; created_at?: string }> }
       if (data?.data?.length) {
-        const evmWallet = data.data.find((w) => w.chain_type === "ethereum")
-        if (evmWallet) {
-          setWalletAddress(evmWallet.address)
-          setPolyWalletAddress(evmWallet.address)
+        const evmWallets = data.data.filter((w) => w.chain_type === "ethereum")
+        if (evmWallets.length === 0) return
+
+        // Priority: wallet with policies > most recently created
+        const withPolicy = evmWallets.find((w) => w.policy_ids && w.policy_ids.length > 0)
+        const chosen = withPolicy || evmWallets.sort((a, b) => {
+          const da = new Date(a.created_at || 0).getTime()
+          const db = new Date(b.created_at || 0).getTime()
+          return db - da // newest first
+        })[0]
+
+        if (chosen) {
+          console.log("[Positions] Using wallet:", chosen.address, "policies:", chosen.policy_ids?.length || 0)
+          setWalletAddress(chosen.address)
+          setPolyWalletAddress(chosen.address)
         }
       }
     }).catch(() => {})
