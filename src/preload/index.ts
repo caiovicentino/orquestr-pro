@@ -39,6 +39,11 @@ const api = {
     setConfig: (appId: string, appSecret: string) => ipcRenderer.invoke("privy:set-config", appId, appSecret),
     getSecret: () => ipcRenderer.invoke("privy:get-secret"),
   },
+  channels: {
+    list: () => ipcRenderer.invoke("channels:list"),
+    save: (channelType: string, config: Record<string, unknown>) => ipcRenderer.invoke("channels:save", channelType, config),
+    remove: (channelType: string) => ipcRenderer.invoke("channels:remove", channelType),
+  },
   credentials: {
     get: () => ipcRenderer.invoke("credentials:get"),
     set: (envVar: string, value: string) => ipcRenderer.invoke("credentials:set", envVar, value),

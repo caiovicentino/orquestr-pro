@@ -10,6 +10,11 @@ import {
   Clock,
   Loader2,
   X,
+  Trash2,
+  Settings,
+  Eye,
+  EyeOff,
+  Save,
 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -48,12 +53,22 @@ const channelIcons: Record<string, string> = {
   gmail: "GM",
 }
 
+interface ChannelField {
+  key: string
+  label: string
+  placeholder: string
+  type?: string
+  required?: boolean
+  description?: string
+}
+
 interface ChannelOption {
   id: string
   name: string
   description: string
   icon: string
-  fields: Array<{ key: string; label: string; placeholder: string; type?: string; required?: boolean }>
+  fields: ChannelField[]
+  configMap: (values: Record<string, string>) => Record<string, unknown>
 }
 
 const channelOptions: ChannelOption[] = [
@@ -61,27 +76,30 @@ const channelOptions: ChannelOption[] = [
     id: "whatsapp",
     name: "WhatsApp",
     icon: "https://cdn.simpleicons.org/whatsapp/25D366",
-    description: "Connect via QR code pairing. No credentials needed — login happens via the agent.",
+    description: "Connect via QR code pairing. The gateway handles authentication — just start it and scan the QR code in the agent's chat.",
     fields: [],
+    configMap: () => ({}),
   },
   {
     id: "telegram",
     name: "Telegram",
     icon: "https://cdn.simpleicons.org/telegram/26A5E4",
-    description: "Connect a Telegram bot. Create one via @BotFather and paste the token.",
+    description: "Connect a Telegram bot. Create one via @BotFather and paste the token below.",
     fields: [
-      { key: "botToken", label: "Bot Token", placeholder: "123456:ABCDEF...", required: true },
+      { key: "botToken", label: "Bot Token", placeholder: "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw", required: true, description: "Get this from @BotFather on Telegram" },
     ],
+    configMap: (v) => ({ botToken: v.botToken, dmPolicy: "open", streamMode: "partial" }),
   },
   {
     id: "slack",
     name: "Slack",
     icon: "https://cdn.simpleicons.org/slack",
-    description: "Connect a Slack app with Socket Mode enabled.",
+    description: "Connect a Slack app with Socket Mode enabled. Create an app at api.slack.com/apps.",
     fields: [
-      { key: "botToken", label: "Bot Token", placeholder: "xoxb-...", required: true },
-      { key: "appToken", label: "App Token", placeholder: "xapp-...", required: true },
+      { key: "botToken", label: "Bot Token", placeholder: "xoxb-...", required: true, description: "Bot User OAuth Token from the app settings" },
+      { key: "appToken", label: "App-Level Token", placeholder: "xapp-...", required: true, description: "App-Level Token with connections:write scope" },
     ],
+    configMap: (v) => ({ botToken: v.botToken, appToken: v.appToken }),
   },
   {
     id: "discord",
@@ -89,24 +107,27 @@ const channelOptions: ChannelOption[] = [
     icon: "https://cdn.simpleicons.org/discord/5865F2",
     description: "Connect a Discord bot. Create one in the Discord Developer Portal.",
     fields: [
-      { key: "token", label: "Bot Token", placeholder: "Discord bot token...", required: true },
+      { key: "token", label: "Bot Token", placeholder: "Discord bot token...", required: true, description: "From Discord Developer Portal → Bot → Token" },
     ],
+    configMap: (v) => ({ token: v.token, dmPolicy: "open" }),
   },
   {
     id: "signal",
     name: "Signal",
     icon: "https://cdn.simpleicons.org/signal/3A76F0",
-    description: "Connect via signal-cli. Requires signal-cli installed on the system.",
+    description: "Connect via signal-cli. Requires signal-cli installed and registered on the system.",
     fields: [
-      { key: "cliPath", label: "signal-cli Path", placeholder: "/usr/local/bin/signal-cli" },
+      { key: "cliPath", label: "signal-cli Path", placeholder: "/usr/local/bin/signal-cli", description: "Path to signal-cli binary (leave empty for default)" },
     ],
+    configMap: (v) => (v.cliPath ? { cliPath: v.cliPath } : {}),
   },
   {
     id: "webchat",
     name: "WebChat",
     icon: "https://cdn.simpleicons.org/googlechat/00AC47",
-    description: "Built-in web chat — always available via the Gateway. No configuration needed.",
+    description: "Built-in web chat — always available via the Gateway Control UI. No configuration needed.",
     fields: [],
+    configMap: () => ({}),
   },
   {
     id: "gmail",
@@ -119,6 +140,12 @@ const channelOptions: ChannelOption[] = [
       { key: "topicName", label: "Pub/Sub Topic", placeholder: "projects/my-project/topics/openclaw-gmail" },
       { key: "subscriptionName", label: "Pub/Sub Subscription", placeholder: "projects/my-project/subscriptions/openclaw-gmail-sub" },
     ],
+    configMap: (v) => {
+      const config: Record<string, string> = { email: v.email, credentialsPath: v.credentialsPath }
+      if (v.topicName) config.topicName = v.topicName
+      if (v.subscriptionName) config.subscriptionName = v.subscriptionName
+      return config
+    },
   },
   {
     id: "googlechat",
@@ -128,6 +155,7 @@ const channelOptions: ChannelOption[] = [
     fields: [
       { key: "credentialsPath", label: "Service Account JSON Path", placeholder: "~/.openclaw/google-chat-credentials.json", required: true },
     ],
+    configMap: (v) => ({ credentialsPath: v.credentialsPath }),
   },
   {
     id: "msteams",
@@ -138,6 +166,7 @@ const channelOptions: ChannelOption[] = [
       { key: "appId", label: "App ID", placeholder: "Azure Bot App ID...", required: true },
       { key: "appPassword", label: "App Password", placeholder: "Azure Bot App Password...", required: true, type: "password" },
     ],
+    configMap: (v) => ({ appId: v.appId, appPassword: v.appPassword }),
   },
 ]
 
@@ -155,26 +184,55 @@ function timeAgo(ts: string | number | null | undefined): string {
 
 export function ChannelsPage({ client, isConnected }: ChannelsPageProps) {
   const [channels, setChannels] = useState<Channel[]>([])
+  const [savedChannels, setSavedChannels] = useState<Record<string, unknown>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [showAddDialog, setShowAddDialog] = useState(false)
+  const [editingChannel, setEditingChannel] = useState<string | null>(null)
+  const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
 
   const loadChannels = useCallback(async () => {
     if (!isConnected) return
     setIsLoading(true)
     try {
+      // Load live channel status from gateway
       const result = await client.channelsStatus() as {
         channelLabels?: Record<string, string>
         channels?: Record<string, { configured?: boolean }>
         channelAccounts?: Record<string, Array<Record<string, unknown>>>
       }
-      if (!result) return
+
+      // Load saved channel configs from disk
+      const saved = await window.api.channels.list()
+      setSavedChannels(saved || {})
+
+      if (!result) {
+        // If gateway not responding, still show saved channels
+        const mapped: Channel[] = []
+        for (const [channelType] of Object.entries(saved || {})) {
+          mapped.push({
+            id: channelType,
+            name: channelType.charAt(0).toUpperCase() + channelType.slice(1),
+            type: channelType,
+            status: "disconnected",
+            accountId: "configured",
+            lastMessage: "Never",
+            dmPolicy: "pairing",
+            running: false,
+            configured: true,
+          })
+        }
+        setChannels(mapped)
+        return
+      }
 
       const labels = result.channelLabels || {}
       const mapped: Channel[] = []
       const accounts = result.channelAccounts || {}
+      const seenTypes = new Set<string>()
 
       for (const [channelType, accountList] of Object.entries(accounts)) {
         if (!Array.isArray(accountList)) continue
+        seenTypes.add(channelType)
         for (const account of accountList) {
           const connected = !!(account.connected || account.running)
           const hasError = !!account.lastError && !connected
@@ -182,27 +240,47 @@ export function ChannelsPage({ client, isConnected }: ChannelsPageProps) {
 
           mapped.push({
             id: `${channelType}-${accountId}`,
-            name: `${labels[channelType] || channelType}${accountId !== "default" ? ` (${accountId})` : ""}`,
+            name: `${labels[channelType] || channelType.charAt(0).toUpperCase() + channelType.slice(1)}${accountId !== "default" ? ` (${accountId})` : ""}`,
             type: channelType,
             status: connected ? "connected" : hasError ? "error" : "disconnected",
             accountId: (account.audience as string) || (account.bot as Record<string, unknown>)?.username as string || accountId,
             lastMessage: timeAgo(account.lastInboundAt as string || account.lastMessageAt as string),
             dmPolicy: (account.dmPolicy as string) || "pairing",
             running: !!account.running,
-            configured: !!account.configured,
+            configured: true,
           })
         }
       }
 
+      // Show saved channels that aren't in the live status (not yet started)
       const configuredChannels = result.channels || {}
       for (const [channelType, info] of Object.entries(configuredChannels)) {
-        if (info?.configured && !mapped.find((m) => m.type === channelType)) {
+        if (info?.configured && !seenTypes.has(channelType)) {
+          seenTypes.add(channelType)
           mapped.push({
             id: channelType,
-            name: labels[channelType] || channelType,
+            name: labels[channelType] || channelType.charAt(0).toUpperCase() + channelType.slice(1),
             type: channelType,
             status: "disconnected",
             accountId: "default",
+            lastMessage: "Never",
+            dmPolicy: "pairing",
+            running: false,
+            configured: true,
+          })
+        }
+      }
+
+      // Also show channels saved to config but not yet recognized by gateway
+      for (const channelType of Object.keys(saved || {})) {
+        if (!seenTypes.has(channelType)) {
+          seenTypes.add(channelType)
+          mapped.push({
+            id: channelType,
+            name: channelType.charAt(0).toUpperCase() + channelType.slice(1),
+            type: channelType,
+            status: "disconnected",
+            accountId: "saved",
             lastMessage: "Never",
             dmPolicy: "pairing",
             running: false,
@@ -222,6 +300,24 @@ export function ChannelsPage({ client, isConnected }: ChannelsPageProps) {
     loadChannels()
   }, [loadChannels])
 
+  // Auto-dismiss status messages
+  useEffect(() => {
+    if (statusMessage) {
+      const t = setTimeout(() => setStatusMessage(null), 4000)
+      return () => clearTimeout(t)
+    }
+  }, [statusMessage])
+
+  const handleRemoveChannel = async (channelType: string) => {
+    const result = await window.api.channels.remove(channelType)
+    if (result.success) {
+      setStatusMessage({ type: "success", text: `${channelType} removed. Gateway restarting...` })
+      setTimeout(loadChannels, 3000)
+    } else {
+      setStatusMessage({ type: "error", text: result.error || "Failed to remove channel" })
+    }
+  }
+
   const connectedCount = channels.filter((c) => c.status === "connected").length
 
   return (
@@ -230,7 +326,7 @@ export function ChannelsPage({ client, isConnected }: ChannelsPageProps) {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Channels</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Connect and manage messaging channels
+            Connect messaging platforms. Configurations persist across restarts.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -245,6 +341,15 @@ export function ChannelsPage({ client, isConnected }: ChannelsPageProps) {
         </div>
       </div>
 
+      {statusMessage && (
+        <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
+          statusMessage.type === "success" ? "bg-green-500/10 text-green-400 border border-green-500/20" : "bg-red-500/10 text-red-400 border border-red-500/20"
+        }`}>
+          {statusMessage.type === "success" ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+          {statusMessage.text}
+        </div>
+      )}
+
       <div className="grid grid-cols-3 gap-4">
         <StatCard label="Total Channels" value={String(channels.length)} />
         <StatCard label="Connected" value={String(connectedCount)} />
@@ -256,22 +361,45 @@ export function ChannelsPage({ client, isConnected }: ChannelsPageProps) {
           <CardContent className="flex flex-col items-center justify-center py-16">
             <MessageSquare className="h-10 w-10 text-muted-foreground mb-3" />
             <p className="text-sm font-medium text-muted-foreground">
-              {isConnected ? "No channels configured" : "Start the Gateway to see channels"}
+              {isConnected ? "No channels configured. Click Add Channel to get started." : "Start the Gateway to see channels"}
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-2 gap-4">
           {channels.map((channel) => (
-            <ChannelCard key={channel.id} channel={channel} />
+            <ChannelCard
+              key={channel.id}
+              channel={channel}
+              onConfigure={() => setEditingChannel(channel.type)}
+              onRemove={() => handleRemoveChannel(channel.type)}
+            />
           ))}
         </div>
       )}
 
       {showAddDialog && (
         <AddChannelDialog
-          client={client}
           onClose={() => setShowAddDialog(false)}
+          onSaved={() => {
+            setShowAddDialog(false)
+            setStatusMessage({ type: "success", text: "Channel saved. Gateway restarting..." })
+            setTimeout(loadChannels, 3000)
+          }}
+          existingChannels={Object.keys(savedChannels)}
+        />
+      )}
+
+      {editingChannel && (
+        <EditChannelDialog
+          channelType={editingChannel}
+          savedConfig={(savedChannels[editingChannel] || {}) as Record<string, unknown>}
+          onClose={() => setEditingChannel(null)}
+          onSaved={() => {
+            setEditingChannel(null)
+            setStatusMessage({ type: "success", text: "Channel updated. Gateway restarting..." })
+            setTimeout(loadChannels, 3000)
+          }}
         />
       )}
     </div>
@@ -279,24 +407,124 @@ export function ChannelsPage({ client, isConnected }: ChannelsPageProps) {
 }
 
 function AddChannelDialog({
-  client,
   onClose,
+  onSaved,
+  existingChannels,
 }: {
-  client: GatewayClient
   onClose: () => void
+  onSaved: () => void
+  existingChannels: string[]
 }) {
-  const [isSending, setIsSending] = useState(false)
+  const [selectedChannel, setSelectedChannel] = useState<ChannelOption | null>(null)
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({})
+  const [isSaving, setIsSaving] = useState(false)
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
+  const [error, setError] = useState<string | null>(null)
 
-  const handleSelect = async (channel: ChannelOption) => {
-    setIsSending(true)
-    try {
-      await client.chatSend("default",
-        `I want to set up ${channel.name} as a new channel. Guide me through the complete setup process step by step. Ask me for any credentials or tokens needed and configure everything.`,
-        { thinking: "high" }
-      )
-    } catch {}
-    setIsSending(false)
-    onClose()
+  const handleSave = async () => {
+    if (!selectedChannel) return
+
+    // Validate required fields
+    for (const field of selectedChannel.fields) {
+      if (field.required && !fieldValues[field.key]?.trim()) {
+        setError(`${field.label} is required`)
+        return
+      }
+    }
+
+    setIsSaving(true)
+    setError(null)
+
+    const channelConfig = selectedChannel.configMap(fieldValues)
+    const result = await window.api.channels.save(selectedChannel.id, channelConfig)
+
+    if (result.success) {
+      onSaved()
+    } else {
+      setError(result.error || "Failed to save channel")
+    }
+    setIsSaving(false)
+  }
+
+  if (selectedChannel) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+        <div className="relative w-[480px] max-h-[80vh] rounded-xl border bg-card shadow-2xl overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b">
+            <div className="flex items-center gap-3">
+              <img src={selectedChannel.icon} alt="" className="h-6 w-6" />
+              <h2 className="text-base font-semibold">Configure {selectedChannel.name}</h2>
+            </div>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+
+          <div className="p-4 space-y-4">
+            <p className="text-sm text-muted-foreground">{selectedChannel.description}</p>
+
+            {selectedChannel.fields.length === 0 ? (
+              <div className="bg-secondary/50 rounded-lg p-4 text-sm text-muted-foreground">
+                No configuration needed. Just save and the gateway will handle the rest.
+              </div>
+            ) : (
+              selectedChannel.fields.map((field) => (
+                <div key={field.key} className="space-y-1.5">
+                  <label className="text-sm font-medium">
+                    {field.label}
+                    {field.required && <span className="text-red-400 ml-1">*</span>}
+                  </label>
+                  {field.description && (
+                    <p className="text-xs text-muted-foreground">{field.description}</p>
+                  )}
+                  <div className="relative">
+                    <input
+                      type={field.type === "password" && !showSecrets[field.key] ? "password" : showSecrets[field.key] ? "text" : "text"}
+                      placeholder={field.placeholder}
+                      value={fieldValues[field.key] || ""}
+                      onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    {(field.type === "password" || field.key.toLowerCase().includes("token") || field.key.toLowerCase().includes("secret") || field.key.toLowerCase().includes("password")) && fieldValues[field.key] && (
+                      <button
+                        type="button"
+                        onClick={() => setShowSecrets((prev) => ({ ...prev, [field.key]: !prev[field.key] }))}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showSecrets[field.key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+
+            {error && (
+              <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 text-red-400 text-sm border border-red-500/20">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                {error}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between pt-2">
+              <Button variant="ghost" size="sm" onClick={() => setSelectedChannel(null)}>
+                ← Back
+              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+                <Button size="sm" onClick={handleSave} disabled={isSaving}>
+                  {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+                  Save & Connect
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -312,43 +540,178 @@ function AddChannelDialog({
 
         <div className="p-4">
           <p className="text-sm text-muted-foreground mb-4">
-            Select a channel and the AI agent will guide you through the setup process via Chat.
+            Select a messaging platform to connect. Configuration is saved to disk and persists across restarts.
           </p>
           <div className="grid grid-cols-3 gap-3">
-            {channelOptions.map((ch) => (
-              <button
-                key={ch.id}
-                onClick={() => handleSelect(ch)}
-                disabled={isSending}
-                className="flex flex-col items-center gap-2.5 p-4 rounded-lg border hover:bg-accent/50 hover:border-primary/50 transition-colors disabled:opacity-50"
-              >
-                <img
-                  src={ch.icon}
-                  alt={ch.name}
-                  className="h-9 w-9 object-contain"
-                  loading="lazy"
-                />
-                <span className="text-xs font-medium">{ch.name}</span>
-              </button>
-            ))}
+            {channelOptions.map((ch) => {
+              const isExisting = existingChannels.includes(ch.id)
+              return (
+                <button
+                  key={ch.id}
+                  onClick={() => !isExisting && setSelectedChannel(ch)}
+                  disabled={isExisting}
+                  className={`flex flex-col items-center gap-2.5 p-4 rounded-lg border transition-colors ${
+                    isExisting
+                      ? "opacity-40 cursor-not-allowed border-border"
+                      : "hover:bg-accent/50 hover:border-primary/50"
+                  }`}
+                >
+                  <img
+                    src={ch.icon}
+                    alt={ch.name}
+                    className="h-9 w-9 object-contain"
+                    loading="lazy"
+                  />
+                  <span className="text-xs font-medium">{ch.name}</span>
+                  {isExisting && <span className="text-[10px] text-muted-foreground">Configured</span>}
+                </button>
+              )
+            })}
           </div>
-          {isSending && (
-            <div className="flex items-center justify-center gap-2 mt-4 text-sm text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Sending to agent...
-            </div>
-          )}
         </div>
       </div>
     </div>
   )
 }
 
-function ChannelCard({ channel }: { channel: Channel }) {
+function EditChannelDialog({
+  channelType,
+  savedConfig,
+  onClose,
+  onSaved,
+}: {
+  channelType: string
+  savedConfig: Record<string, unknown>
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const channelDef = channelOptions.find((c) => c.id === channelType)
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {}
+    if (channelDef) {
+      for (const field of channelDef.fields) {
+        initial[field.key] = (savedConfig[field.key] as string) || ""
+      }
+    }
+    return initial
+  })
+  const [isSaving, setIsSaving] = useState(false)
+  const [showSecrets, setShowSecrets] = useState<Record<string, boolean>>({})
+  const [error, setError] = useState<string | null>(null)
+
+  const handleSave = async () => {
+    if (!channelDef) return
+
+    for (const field of channelDef.fields) {
+      if (field.required && !fieldValues[field.key]?.trim()) {
+        setError(`${field.label} is required`)
+        return
+      }
+    }
+
+    setIsSaving(true)
+    setError(null)
+
+    const channelConfig = channelDef.configMap(fieldValues)
+    const result = await window.api.channels.save(channelType, channelConfig)
+
+    if (result.success) {
+      onSaved()
+    } else {
+      setError(result.error || "Failed to save")
+    }
+    setIsSaving(false)
+  }
+
+  const displayName = channelDef?.name || channelType.charAt(0).toUpperCase() + channelType.slice(1)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative w-[480px] max-h-[80vh] rounded-xl border bg-card shadow-2xl overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex items-center gap-3">
+            {channelDef && <img src={channelDef.icon} alt="" className="h-6 w-6" />}
+            <h2 className="text-base font-semibold">Edit {displayName}</h2>
+          </div>
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {channelDef && channelDef.fields.length > 0 ? (
+            channelDef.fields.map((field) => (
+              <div key={field.key} className="space-y-1.5">
+                <label className="text-sm font-medium">
+                  {field.label}
+                  {field.required && <span className="text-red-400 ml-1">*</span>}
+                </label>
+                {field.description && (
+                  <p className="text-xs text-muted-foreground">{field.description}</p>
+                )}
+                <div className="relative">
+                  <input
+                    type={showSecrets[field.key] ? "text" : "password"}
+                    placeholder={field.placeholder}
+                    value={fieldValues[field.key] || ""}
+                    onChange={(e) => setFieldValues((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                    className="w-full px-3 py-2 text-sm bg-secondary border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 font-mono"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  {fieldValues[field.key] && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSecrets((prev) => ({ ...prev, [field.key]: !prev[field.key] }))}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showSecrets[field.key] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="bg-secondary/50 rounded-lg p-4 text-sm text-muted-foreground">
+              This channel has no editable configuration. It connects automatically when the gateway starts.
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 text-red-400 text-sm border border-red-500/20">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
+            <Button size="sm" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+              Save & Restart
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ChannelCard({
+  channel,
+  onConfigure,
+  onRemove,
+}: {
+  channel: Channel
+  onConfigure: () => void
+  onRemove: () => void
+}) {
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const statusConfig = {
-    connected: { label: "Connected", badge: "success" as const },
-    disconnected: { label: "Disconnected", badge: "secondary" as const },
-    error: { label: "Error", badge: "destructive" as const },
+    connected: { label: "Connected", badge: "success" as const, icon: CheckCircle2 },
+    disconnected: { label: "Disconnected", badge: "secondary" as const, icon: XCircle },
+    error: { label: "Error", badge: "destructive" as const, icon: AlertCircle },
   }
 
   const config = statusConfig[channel.status]
@@ -381,10 +744,29 @@ function ChannelCard({ channel }: { channel: Channel }) {
           <InfoRow icon={MessageSquare} label="DM Policy" value={channel.dmPolicy} />
         </div>
 
-        <div className="mt-3 flex items-center justify-end">
-          <Button variant="outline" size="sm" className="h-7 text-xs">
-            Configure
-          </Button>
+        <div className="mt-3 flex items-center justify-end gap-2">
+          {showRemoveConfirm ? (
+            <>
+              <span className="text-xs text-red-400 mr-1">Remove?</span>
+              <Button variant="destructive" size="sm" className="h-7 text-xs" onClick={() => { onRemove(); setShowRemoveConfirm(false) }}>
+                Yes, Remove
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowRemoveConfirm(false)}>
+                Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="sm" className="h-7 text-xs text-muted-foreground hover:text-red-400" onClick={() => setShowRemoveConfirm(true)}>
+                <Trash2 className="h-3 w-3 mr-1" />
+                Remove
+              </Button>
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={onConfigure}>
+                <Settings className="h-3 w-3 mr-1" />
+                Configure
+              </Button>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>

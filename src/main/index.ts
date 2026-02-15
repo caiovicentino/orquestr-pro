@@ -81,8 +81,8 @@ function createTray(): void {
         },
         {
           label: "Stop Gateway",
-          click: () => {
-            gatewayManager.stop()
+          click: async () => {
+            await gatewayManager.stop()
             updateTrayMenu()
           },
         },
@@ -98,8 +98,8 @@ function createTray(): void {
     { type: "separator" },
     {
       label: "Quit Orquestr Pro",
-      click: () => {
-        gatewayManager.stop()
+      click: async () => {
+        await gatewayManager.stop()
         app.exit(0)
       },
     },
@@ -133,7 +133,7 @@ function registerGatewayHandlers(): void {
     }
   })
 
-  ipcMain.handle("gateway:stop", () => {
+  ipcMain.handle("gateway:stop", async () => {
     console.log("[IPC] gateway:stop called")
     return gatewayManager.stop()
   })
@@ -575,6 +575,57 @@ function registerCredentialsHandlers(): void {
   })
 }
 
+function registerChannelHandlers(): void {
+  // Get all configured channels from config
+  ipcMain.handle("channels:list", () => {
+    const config = readConfig()
+    const channels = (config.channels || {}) as Record<string, unknown>
+    return channels
+  })
+
+  // Save a channel configuration — merges into config.channels.<type>
+  // Then restarts gateway so it picks up the new config
+  ipcMain.handle("channels:save", async (_event, channelType: string, channelConfig: Record<string, unknown>) => {
+    try {
+      // OpenClaw requires `enabled: true` for channels to actually connect
+      channelConfig.enabled = true
+
+      // Patch the config with the new channel
+      const patch: Record<string, unknown> = {
+        channels: {
+          [channelType]: channelConfig,
+        },
+      }
+      patchConfig(patch)
+
+      // Restart gateway to pick up the new channel config
+      await gatewayManager.restart()
+
+      return { success: true }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Failed to save channel" }
+    }
+  })
+
+  // Remove a channel configuration
+  ipcMain.handle("channels:remove", async (_event, channelType: string) => {
+    try {
+      const config = readConfig()
+      const channels = (config.channels || {}) as Record<string, unknown>
+      delete channels[channelType]
+      config.channels = channels
+      writeConfig(config)
+
+      // Restart gateway to apply the change
+      await gatewayManager.restart()
+
+      return { success: true }
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Failed to remove channel" }
+    }
+  })
+}
+
 function registerAppHandlers(): void {
   ipcMain.handle("app:version", () => {
     return app.getVersion()
@@ -634,6 +685,7 @@ app.whenReady().then(() => {
 
   registerGatewayHandlers()
   registerConfigHandlers()
+  registerChannelHandlers()
   registerCutsHandlers()
   registerFetchHandlers()
   registerPrivyHandlers()
@@ -701,12 +753,16 @@ app.whenReady().then(() => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
-    gatewayManager.stop()
-    app.quit()
+    gatewayManager.stop().then(() => app.quit())
   }
 })
 
-app.on("before-quit", () => {
-  isQuitting = true
-  gatewayManager.stop()
+app.on("before-quit", (event) => {
+  if (!isQuitting) {
+    isQuitting = true
+    event.preventDefault()
+    gatewayManager.stop().then(() => {
+      app.exit(0)
+    })
+  }
 })

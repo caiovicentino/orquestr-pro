@@ -146,20 +146,13 @@ export function ensureGatewayConfig(): void {
     }
   }
 
-  // IMPORTANT: Remove any plugins that aren't bundled with Orquestr Pro.
-  // The embedded OpenClaw only has core functionality — no whatsapp,
-  // telegram, memory-core, etc. If these are in the config (e.g. copied
-  // from a system OpenClaw install), the gateway will crash on validation.
-  if (config.plugins) {
-    delete config.plugins
-    needsWrite = true
-  }
-
-  // Also clean up channel entries that reference external plugins
-  if (config.channels) {
-    delete config.channels
-    needsWrite = true
-  }
+  // NOTE: We NO LONGER delete plugins or channels.
+  // Channels (whatsapp, telegram, discord, etc.) are CORE OpenClaw features
+  // and must be preserved across restarts. Users configure these via the
+  // Channels page and they must persist.
+  //
+  // If specific plugins cause validation failures, handle them individually
+  // rather than nuking the entire section.
 
   // ── Ensure models.providers exists based on available credentials ──
   // Without this, the model registry is empty and all models are "unknown".

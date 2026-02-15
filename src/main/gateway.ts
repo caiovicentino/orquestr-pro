@@ -1,5 +1,5 @@
 import { ChildProcess, spawn } from "child_process"
-import { existsSync, readFileSync } from "fs"
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from "fs"
 import { join, resolve, dirname } from "path"
 import { app } from "electron"
 import { randomUUID } from "crypto"
@@ -53,6 +53,136 @@ export class GatewayManager {
     this.state.logs = [...this.logs]
   }
 
+  // ── PID lock file management ──
+  // Prevents orphan gateway processes from surviving app crashes/restarts.
+  // On start: kill any process at the locked PID, then write our new PID.
+  // On stop: remove the lock file.
+
+  private get pidFilePath(): string {
+    return join(getStateDir(), "gateway.pid")
+  }
+
+  private writePidFile(pid: number): void {
+    try {
+      ensureStateDir()
+      writeFileSync(this.pidFilePath, String(pid), { mode: 0o600 })
+      this.log(`PID file written: ${pid}`)
+    } catch (e) {
+      this.log(`Warning: could not write PID file: ${e}`)
+    }
+  }
+
+  private removePidFile(): void {
+    try {
+      if (existsSync(this.pidFilePath)) {
+        unlinkSync(this.pidFilePath)
+        this.log("PID file removed")
+      }
+    } catch {}
+  }
+
+  private readPidFile(): number | null {
+    try {
+      if (existsSync(this.pidFilePath)) {
+        const pid = parseInt(readFileSync(this.pidFilePath, "utf-8").trim(), 10)
+        return isNaN(pid) ? null : pid
+      }
+    } catch {}
+    return null
+  }
+
+  private isProcessAlive(pid: number): boolean {
+    try {
+      process.kill(pid, 0) // signal 0 = check if alive
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * Kill a process by PID. Sends SIGTERM first, waits up to `timeoutMs`,
+   * then escalates to SIGKILL if still alive. Returns when process is dead.
+   */
+  private async killProcess(pid: number, timeoutMs = 5000): Promise<void> {
+    if (!this.isProcessAlive(pid)) {
+      this.log(`Process ${pid} already dead`)
+      return
+    }
+
+    this.log(`Killing process ${pid} (SIGTERM)...`)
+    try {
+      process.kill(pid, "SIGTERM")
+    } catch (e) {
+      this.log(`SIGTERM failed for ${pid}: ${e}`)
+      return
+    }
+
+    // Wait for process to die
+    const start = Date.now()
+    while (Date.now() - start < timeoutMs) {
+      await new Promise((r) => setTimeout(r, 200))
+      if (!this.isProcessAlive(pid)) {
+        this.log(`Process ${pid} terminated (SIGTERM)`)
+        return
+      }
+    }
+
+    // Escalate to SIGKILL
+    this.log(`Process ${pid} still alive after ${timeoutMs}ms, sending SIGKILL`)
+    try {
+      process.kill(pid, "SIGKILL")
+    } catch {}
+    // Give SIGKILL a moment
+    await new Promise((r) => setTimeout(r, 500))
+    if (!this.isProcessAlive(pid)) {
+      this.log(`Process ${pid} killed (SIGKILL)`)
+    } else {
+      this.log(`WARNING: Process ${pid} survived SIGKILL!`)
+    }
+  }
+
+  /**
+   * Targeted cleanup before starting a new gateway.
+   * ONLY kills OUR OWN processes — never touches other gateways on the system.
+   * Other gateways on different ports are left alone.
+   *
+   * 1. Kill our tracked child process (if any)
+   * 2. Kill the process from our PID lock file (handles app crash/restart)
+   *
+   * If our default port is taken by another gateway, findAvailablePort()
+   * will auto-increment to the next free port — no killing needed.
+   */
+  private async cleanupBeforeStart(): Promise<void> {
+    this.log("Cleaning up our own stale gateway process (if any)...")
+
+    // 1. Kill tracked child process
+    if (this.process) {
+      const pid = this.process.pid
+      this.log(`Killing tracked child process PID ${pid}`)
+      try {
+        this.process.kill("SIGTERM")
+      } catch {}
+      if (pid) {
+        await this.killProcess(pid, 3000)
+      }
+      this.process = null
+    }
+
+    // 2. Kill process from OUR PID lock file (handles app restart/crash scenario)
+    const lockedPid = this.readPidFile()
+    if (lockedPid) {
+      // Only kill if the locked PID is actually an OpenClaw gateway (sanity check)
+      if (this.isProcessAlive(lockedPid)) {
+        this.log(`Found our stale gateway PID: ${lockedPid}, killing...`)
+        await this.killProcess(lockedPid, 3000)
+      }
+      this.removePidFile()
+    }
+
+    this.log("Cleanup complete — other gateways left untouched")
+  }
+
   private resolveOpenClawEntry(): string | null {
     const candidates: string[] = []
 
@@ -81,7 +211,6 @@ export class GatewayManager {
       const { execSync } = require("child_process") as typeof import("child_process")
       const whichResult = execSync("which openclaw 2>/dev/null", { timeout: 3000 }).toString().trim()
       if (whichResult) {
-        // 'which openclaw' returns the bin symlink — resolve to find openclaw.mjs
         const realBin = execSync(`readlink -f "${whichResult}" 2>/dev/null || realpath "${whichResult}" 2>/dev/null`, { timeout: 3000 }).toString().trim()
         if (realBin) {
           candidates.push(realBin)
@@ -90,8 +219,8 @@ export class GatewayManager {
       }
     } catch {}
     try {
-      const { execSync } = require("child_process") as typeof import("child_process")
-      const globalRoot = execSync("npm root -g 2>/dev/null", { timeout: 3000 }).toString().trim()
+      const { execSync: execSync2 } = require("child_process") as typeof import("child_process")
+      const globalRoot = execSync2("npm root -g 2>/dev/null", { timeout: 3000 }).toString().trim()
       if (globalRoot) {
         candidates.push(join(globalRoot, "openclaw", "openclaw.mjs"))
       }
@@ -106,16 +235,11 @@ export class GatewayManager {
   }
 
   private resolveNodeBin(): string {
-    // In packaged app, use Electron's bundled Node.js (process.execPath points to the Electron binary)
-    // But we need a standalone node — check if Electron can run as node with ELECTRON_RUN_AS_NODE
-    const candidates: string[] = []
-
-    // Prefer system Node.js if available (more compatible)
-    candidates.push(
+    const candidates: string[] = [
       "/opt/homebrew/bin/node",
       "/usr/local/bin/node",
       "/usr/bin/node",
-    )
+    ]
 
     for (const candidate of candidates) {
       if (existsSync(candidate)) {
@@ -124,8 +248,6 @@ export class GatewayManager {
       }
     }
 
-    // Fallback: use Electron's own binary with ELECTRON_RUN_AS_NODE=1
-    // This makes Electron behave as a regular Node.js runtime
     this.log(`Node binary: using Electron as Node (${process.execPath})`)
     return process.execPath
   }
@@ -154,6 +276,12 @@ export class GatewayManager {
     this.state.status = "starting"
     this.state.error = null
     this.log("Starting gateway...")
+
+    // ── CRITICAL: Clean up ALL stale processes before starting ──
+    await this.cleanupBeforeStart()
+
+    // Small delay to ensure ports are released by OS after killing
+    await new Promise((r) => setTimeout(r, 500))
 
     // Find an available port (auto-increment if default is taken by system OpenClaw)
     const port = await this.findAvailablePort(this.state.port)
@@ -187,9 +315,7 @@ export class GatewayManager {
 
       this.log(`Spawning: ${nodeBin} ${args.join(" ")}`)
 
-      // If using Electron as Node runtime, set ELECTRON_RUN_AS_NODE
       const useElectronAsNode = nodeBin === process.execPath
-      // Use Orquestr Pro's own isolated state dir (not ~/.openclaw)
       const stateDir = getStateDir()
       const configPath = getConfigPath()
       const spawnEnv: Record<string, string> = {
@@ -243,6 +369,11 @@ export class GatewayManager {
       this.state.pid = this.process.pid ?? null
       this.log(`Process spawned with PID: ${this.state.pid}`)
 
+      // ── Write PID lock file ──
+      if (this.state.pid) {
+        this.writePidFile(this.state.pid)
+      }
+
       this.process.stdout?.on("data", (data: Buffer) => {
         const chunk = data.toString().trim()
         if (chunk) this.log(`[stdout] ${chunk.slice(0, 300)}`)
@@ -276,6 +407,7 @@ export class GatewayManager {
           this.state.error = `Gateway exited with code ${code}`
         }
         this.process = null
+        this.removePidFile()
       })
 
       this.process.on("error", (err) => {
@@ -284,6 +416,7 @@ export class GatewayManager {
         this.state.error = `Spawn error: ${err.message}`
         this.state.pid = null
         this.process = null
+        this.removePidFile()
       })
 
       await this.waitForReady(15000)
@@ -299,26 +432,37 @@ export class GatewayManager {
     }
   }
 
-  stop(): GatewayState {
+  async stop(): Promise<GatewayState> {
     this.log("Stopping gateway...")
+
+    const pid = this.process?.pid || this.state.pid
+
     if (this.process) {
       try {
         this.process.kill("SIGTERM")
       } catch (e) {
         this.log(`Kill error: ${e}`)
       }
-      this.process = null
     }
+
+    // Wait for the process to actually die (up to 5s SIGTERM, then SIGKILL)
+    if (pid) {
+      await this.killProcess(pid, 5000)
+    }
+
+    this.process = null
     this.state.status = "stopped"
     this.state.pid = null
     this.state.startedAt = null
     this.state.error = null
+    this.removePidFile()
+
     return this.getStatus()
   }
 
   async restart(): Promise<GatewayState> {
-    this.stop()
-    await new Promise((r) => setTimeout(r, 1000))
+    await this.stop()
+    // No extra delay needed — stop() now waits for process to die
     return this.start()
   }
 
