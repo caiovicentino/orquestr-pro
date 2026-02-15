@@ -80,6 +80,8 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
   const [showModelSelector, setShowModelSelector] = useState(false)
   const [availableModels, setAvailableModels] = useState<Array<{ id: string; name: string; provider: string }>>([])
   const [selectedModel, setSelectedModel] = useState<string>("")
+  const [agentDisplayName, setAgentDisplayName] = useState("Assistant")
+  const [agentEmoji, setAgentEmoji] = useState<string | undefined>(undefined)
   const activeSession = sessions.find((s) => s.sessionKey === activeSessionKey)
 
   // Load available models from gateway
@@ -92,6 +94,14 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
       }
     }).catch(() => {})
   }, [isConnected, client])
+
+  // Load agent identity (name + emoji) from workspace IDENTITY.md
+  useEffect(() => {
+    window.api.agent.identity().then((identity) => {
+      if (identity?.name) setAgentDisplayName(identity.name)
+      if (identity?.emoji) setAgentEmoji(identity.emoji)
+    }).catch(() => {})
+  }, [])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -570,9 +580,13 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center py-20 text-center">
                 <div className="h-16 w-16 rounded-2xl bg-secondary flex items-center justify-center mb-4">
-                  <Sparkles className="h-8 w-8 text-muted-foreground" />
+                  {agentEmoji ? (
+                    <span className="text-3xl">{agentEmoji}</span>
+                  ) : (
+                    <Sparkles className="h-8 w-8 text-muted-foreground" />
+                  )}
                 </div>
-                <h3 className="text-lg font-medium mb-1">Orquestr Pro Assistant</h3>
+                <h3 className="text-lg font-medium mb-1">{agentEmoji ? `${agentEmoji} ` : ""}{agentDisplayName}</h3>
                 <p className="text-sm text-muted-foreground max-w-md">
                   {isConnected
                     ? "Send a message to start. The assistant can execute commands, browse the web, manage files, run cron jobs, and more."
@@ -592,6 +606,8 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
                   >
                     {message.role === "user" ? (
                       <User className="h-3.5 w-3.5 text-primary-foreground" />
+                    ) : agentEmoji && message.role === "assistant" ? (
+                      <span className="text-sm leading-none">{agentEmoji}</span>
                     ) : (
                       <Sparkles className="h-3.5 w-3.5 text-muted-foreground" />
                     )}
@@ -599,7 +615,7 @@ export function ChatPage({ client, isConnected }: ChatPageProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-sm font-medium">
-                        {message.role === "user" ? "You" : message.role === "system" ? "System" : "Assistant"}
+                        {message.role === "user" ? "You" : message.role === "system" ? "System" : `${agentEmoji ? agentEmoji + " " : ""}${agentDisplayName}`}
                       </span>
                       <span className="text-[11px] text-muted-foreground">{message.timestamp}</span>
                       {message.model && (

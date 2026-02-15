@@ -61,6 +61,9 @@ interface ClawBusinessAPI {
     save: (channelType: string, config: Record<string, unknown>) => Promise<{ success?: boolean; error?: string }>
     remove: (channelType: string) => Promise<{ success?: boolean; error?: string }>
   }
+  agent: {
+    identity: () => Promise<{ name: string; emoji?: string }>
+  }
   credentials: {
     get: () => Promise<Record<string, { configured: boolean; masked: string }>>
     set: (envVar: string, value: string) => Promise<{ success: boolean }>

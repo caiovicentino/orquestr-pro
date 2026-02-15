@@ -44,6 +44,9 @@ const api = {
     save: (channelType: string, config: Record<string, unknown>) => ipcRenderer.invoke("channels:save", channelType, config),
     remove: (channelType: string) => ipcRenderer.invoke("channels:remove", channelType),
   },
+  agent: {
+    identity: () => ipcRenderer.invoke("agent:identity") as Promise<{ name: string; emoji?: string }>,
+  },
   credentials: {
     get: () => ipcRenderer.invoke("credentials:get"),
     set: (envVar: string, value: string) => ipcRenderer.invoke("credentials:set", envVar, value),

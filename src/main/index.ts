@@ -626,6 +626,46 @@ function registerChannelHandlers(): void {
   })
 }
 
+function registerIdentityHandler(): void {
+  ipcMain.handle("agent:identity", () => {
+    const { existsSync: fsExists, readFileSync: fsRead } = require("fs") as typeof import("fs")
+    try {
+      const config = readConfig() as Record<string, unknown>
+      const agents = config?.agents as Record<string, unknown> | undefined
+      const defaults = agents?.defaults as Record<string, unknown> | undefined
+      const workspace = defaults?.workspace as string | undefined
+      if (!workspace) return { name: "Assistant", emoji: undefined }
+
+      const identityPath = join(workspace, "IDENTITY.md")
+      console.log("[Identity] Looking for:", identityPath, "exists:", fsExists(identityPath))
+      if (!fsExists(identityPath)) return { name: "Assistant", emoji: undefined }
+
+      const content = fsRead(identityPath, "utf-8")
+      console.log("[Identity] Content:", content.slice(0, 200))
+      let name = "Assistant"
+      let emoji: string | undefined
+
+      // Parse **Name:** value
+      const nameMatch = content.match(/\*\*Name:\*\*\s*(.+)/i)
+      if (nameMatch) {
+        name = nameMatch[1].trim()
+      }
+
+      // Parse **Emoji:** value
+      const emojiMatch = content.match(/\*\*Emoji:\*\*\s*(.+)/i)
+      if (emojiMatch) {
+        emoji = emojiMatch[1].trim()
+      }
+
+      console.log("[Identity] Result:", { name, emoji })
+      return { name, emoji }
+    } catch (e) {
+      console.error("[Identity] Error:", e)
+      return { name: "Assistant", emoji: undefined }
+    }
+  })
+}
+
 function registerAppHandlers(): void {
   ipcMain.handle("app:version", () => {
     return app.getVersion()
@@ -691,6 +731,7 @@ app.whenReady().then(() => {
   registerPrivyHandlers()
   registerCredentialsHandlers()
   registerAppHandlers()
+  registerIdentityHandler()
   registerNavigationHandlers()
 
   createTray()
