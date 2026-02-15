@@ -11,6 +11,7 @@ import {
   Scissors,
   Clock,
   Wallet,
+  BarChart3,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -25,6 +26,7 @@ export type PageId =
   | "agents"
   | "channels"
   | "markets"
+  | "positions"
   | "wallets"
   | "cron"
   | "security"
@@ -46,6 +48,7 @@ const mainNav: NavItem[] = [
   { id: "agents", label: "Agents", icon: Bot },
   { id: "channels", label: "Channels", icon: MessageSquare },
   { id: "markets", label: "Markets", icon: TrendingUp },
+  { id: "positions", label: "Positions", icon: BarChart3 },
   { id: "wallets", label: "Wallets", icon: Wallet },
   { id: "cron", label: "Cron Jobs", icon: Clock },
 ]

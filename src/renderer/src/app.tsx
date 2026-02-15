@@ -13,6 +13,7 @@ import { PluginsPage } from "@/pages/plugins"
 import { ActivityPage } from "@/pages/activity"
 import { SettingsPage } from "@/pages/settings"
 import { CronPage } from "@/pages/cron"
+import { PositionsPage } from "@/pages/positions"
 import { WalletsPage } from "@/pages/wallets"
 
 const pageTitles: Record<PageId, string> = {
@@ -22,6 +23,7 @@ const pageTitles: Record<PageId, string> = {
   agents: "Agents",
   channels: "Channels",
   markets: "Markets",
+  positions: "Positions",
   wallets: "Wallets",
   cron: "Cron Jobs",
   security: "Security",
@@ -75,6 +77,8 @@ export function App() {
         return <ChannelsPage client={client} isConnected={isConnected} />
       case "markets":
         return <MarketsPage />
+      case "positions":
+        return <PositionsPage client={client} isConnected={isConnected} />
       case "wallets":
         return <WalletsPage client={client} isConnected={isConnected} />
       case "cron":
