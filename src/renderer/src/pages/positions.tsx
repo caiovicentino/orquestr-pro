@@ -197,28 +197,30 @@ export function PositionsPage({ client, isConnected }: PositionsPageProps) {
     if (!address) return
 
     try {
-      // Fetch positions from Gamma API
-      const res = await fetch(`https://gamma-api.polymarket.com/positions?user=${address.toLowerCase()}&sizeThreshold=0.1`)
+      // Fetch positions from Polymarket Data API
+      const res = await fetch(`https://data-api.polymarket.com/positions?user=${address.toLowerCase()}&sizeThreshold=0`)
       const data = await res.json()
 
       if (Array.isArray(data)) {
         const positions: PolymarketPosition[] = data.map((p: Record<string, unknown>) => {
           const size = Number(p.size || 0)
           const avgPrice = Number(p.avgPrice || 0)
-          const curPrice = Number(p.curPrice || p.price || 0)
-          const pnl = size * (curPrice - avgPrice)
-          const pnlPercent = avgPrice > 0 ? ((curPrice - avgPrice) / avgPrice) * 100 : 0
+          const curPrice = Number(p.curPrice || 0)
+          const initialValue = Number(p.initialValue || 0)
+          const currentValue = Number(p.currentValue || 0)
+          const cashPnl = Number(p.cashPnl || 0)
+          const percentPnl = Number(p.percentPnl || 0)
 
           return {
             market: String(p.market || ""),
-            outcome: String(p.outcome || p.title || ""),
+            outcome: String(p.outcome || ""),
             size,
             avgPrice,
             curPrice,
-            pnl,
-            pnlPercent,
-            conditionId: String(p.conditionId || p.condition_id || ""),
-            questionTitle: String(p.title || p.question || p.market || ""),
+            pnl: cashPnl,
+            pnlPercent: percentPnl,
+            conditionId: String(p.conditionId || ""),
+            questionTitle: String(p.title || p.slug || ""),
           }
         }).filter((p: PolymarketPosition) => p.size > 0)
 
