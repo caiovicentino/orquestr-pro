@@ -18,6 +18,8 @@ import {
   Activity,
   ChevronRight,
   Search,
+  Copy,
+  Check,
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -293,6 +295,14 @@ export function PositionsPage({ client, isConnected }: PositionsPageProps) {
 
   const totalPortfolioValue = hlAccountValue + polyTotalValue
   const totalPnl = hlTotalPnl + polyTotalPnl
+
+  // Copy to clipboard with feedback
+  const [copied, setCopied] = useState(false)
+  const copyAddress = (addr: string) => {
+    navigator.clipboard.writeText(addr)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
   // ─── Render ───
 
@@ -618,13 +628,25 @@ export function PositionsPage({ client, isConnected }: PositionsPageProps) {
               {/* Wallet address footer */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Wallet className="h-3 w-3" />
-                <span className="font-mono">{walletAddress}</span>
+                <button
+                  onClick={() => copyAddress(walletAddress)}
+                  className="font-mono hover:text-foreground transition-colors flex items-center gap-1.5 group"
+                  title="Click to copy address"
+                >
+                  {walletAddress.slice(0, 6)}...{walletAddress.slice(-4)}
+                  {copied ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  )}
+                </button>
                 <a
-                  href={`https://app.hyperliquid.xyz/trade?address=${walletAddress}`}
+                  href={`https://debank.com/profile/${walletAddress}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-foreground transition-colors"
-                  onClick={(e) => { e.preventDefault(); window.open(`https://app.hyperliquid.xyz/trade?address=${walletAddress}`, "_blank") }}
+                  title="View on DeBank"
+                  onClick={(e) => { e.preventDefault(); window.open(`https://debank.com/profile/${walletAddress}`, "_blank") }}
                 >
                   <ExternalLink className="h-3 w-3" />
                 </a>
@@ -731,13 +753,25 @@ export function PositionsPage({ client, isConnected }: PositionsPageProps) {
               {/* Wallet address footer */}
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Wallet className="h-3 w-3" />
-                <span className="font-mono">{polyWalletAddress}</span>
+                <button
+                  onClick={() => copyAddress(polyWalletAddress)}
+                  className="font-mono hover:text-foreground transition-colors flex items-center gap-1.5 group"
+                  title="Click to copy address"
+                >
+                  {polyWalletAddress.slice(0, 6)}...{polyWalletAddress.slice(-4)}
+                  {copied ? (
+                    <Check className="h-3 w-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  )}
+                </button>
                 <a
-                  href={`https://polymarket.com/portfolio?address=${polyWalletAddress}`}
+                  href={`https://debank.com/profile/${polyWalletAddress}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-foreground transition-colors"
-                  onClick={(e) => { e.preventDefault(); window.open(`https://polymarket.com/portfolio?address=${polyWalletAddress}`, "_blank") }}
+                  title="View on DeBank"
+                  onClick={(e) => { e.preventDefault(); window.open(`https://debank.com/profile/${polyWalletAddress}`, "_blank") }}
                 >
                   <ExternalLink className="h-3 w-3" />
                 </a>
