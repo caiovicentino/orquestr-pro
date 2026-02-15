@@ -291,8 +291,7 @@ function registerFetchHandlers(): void {
 function registerPrivyHandlers(): void {
   const privyPath = () => {
     const { join } = require("path") as typeof import("path")
-    const { homedir } = require("os") as typeof import("os")
-    return join(process.env.OPENCLAW_STATE_DIR || join(homedir(), ".openclaw"), "privy.json")
+    return join(getStateDir(), "privy.json")
   }
 
   const readPrivy = (): Record<string, string> => {
