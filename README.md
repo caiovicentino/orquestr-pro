@@ -95,6 +95,29 @@ Custom titlebar, dark theme, responsive sidebar, keyboard shortcuts. Built with 
 
 ---
 
+## Skills
+
+Orquestr Pro comes with **12 built-in skills** that give your agent specialized capabilities:
+
+| Skill | Description |
+|---|---|
+| **cross-chain-swap** | Execute cross-chain cryptocurrency swaps via deBridge protocol. Move tokens between Ethereum, Solana, Arbitrum, BSC, and more. |
+| **wallet-manager** | Create and manage crypto wallets via Privy Server Wallets API. Supports 13+ chains (Ethereum, Solana, Bitcoin, Cosmos, etc.). |
+| **agent-manager** | Create, configure, and manage multiple agents with isolated environments, sandbox modes, and channel routing. |
+| **hyperliquid** | Analyze Hyperliquid perpetual markets — prices, funding rates, open interest, volume. Includes HIP-3 assets (stocks, commodities, pre-IPO). |
+| **polymarket** | Analyze Polymarket prediction markets — event probabilities, volume, liquidity. |
+| **crypto-intel** | Crypto market intelligence — Fear & Greed index, whale tracking, on-chain analytics. |
+| **defi** | DeFi protocol interactions — yields, liquidity pools, staking. |
+| **privy** | Privy wallet management — create wallets, check balances, sign transactions. |
+| **live-cutter** | Create AI-powered vertical video cuts from live streams (V24 Cinema Edition with FFmpeg + Whisper). |
+| **channels** | Configure and manage messaging channels (WhatsApp, Telegram, Slack, Discord, etc.). |
+| **agent-creator** | Create new agents with custom identities, models, and skills. |
+| **wallet** | General wallet operations and portfolio tracking. |
+
+Skills are loaded from `~/Library/Application Support/orquestr-pro/openclaw-state/workspace/skills/`. You can add custom skills by creating a `SKILL.md` in a new subdirectory.
+
+---
+
 ## Providers
 
 Orquestr Pro supports **21 AI providers** out of the box:
